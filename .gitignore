@@ -1,0 +1,41 @@
+# --------------------
+# Python-специфичные файлы
+# --------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
+/lib/
+/include/
+/bin/
+
+# --------------------
+# Файлы, которые должны быть исключены
+# --------------------
+
+# 1. Секреты и Конфигурация (Обязательно!)
+# Файл с ключом Сервисного Аккаунта Google Sheets
+service_account.json
+
+# Файл с переменными окружения (хранит BOT_TOKEN)
+.env
+
+# 2. База данных SQLite (создается при работе)
+# Файл базы данных
+bot_database.db
+service_account.json
+*.sqlite
+*.sqlite3
+
+# 3. Файлы операционных систем и редакторов
+.DS_Store # macOS
+Thumbs.db # Windows
+.idea/ # PyCharm/IntelliJ
+.vscode/ # VS Code
+

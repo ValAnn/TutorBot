@@ -1,0 +1,9 @@
+# Core libs
+aiogram>=3.0
+sqlalchemy>=2.0
+python-dotenv>=1.0
+
+# Google Sheets Integration
+gspread>=5.0
+pandas>=2.0 
+apscheduler
