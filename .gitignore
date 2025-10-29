@@ -23,6 +23,7 @@ env/
 # Файл с ключом Сервисного Аккаунта Google Sheets
 service_account.json
 
+
 # Файл с переменными окружения (хранит BOT_TOKEN)
 .env
 
