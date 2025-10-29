@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.orm import Session
 import asyncio
-
+from aiogram.filters import Command
 from database.crud import get_user_by_telegram_id, create_user, get_director, get_unconfirmed_users, confirm_user
 from database.crud import get_db # Используем синхронный CRUD, поэтому нужны потоки
 from config import DIRECTOR_ROLE, CURATOR_ROLE
@@ -34,14 +34,42 @@ async def command_start_handler(message: types.Message, state: FSMContext):
     if user:
         if user.is_confirmed:
             greeting = "С возвращением!"
+            # По умолчанию удаляем старую клавиатуру, если не назначим новую
+            reply_markup = types.ReplyKeyboardRemove() 
+            
             if user.role == DIRECTOR_ROLE:
-                greeting += " Вы - Директор. Ваш функционал доступен."
+                greeting += " Вы - Директор. Ваш функционал доступен. 👇"
+                
+                # --- Создание клавиатуры Директора ---
+                director_keyboard = types.ReplyKeyboardMarkup(
+                    keyboard=[
+                        [
+                            types.KeyboardButton(text="📊 Отчетность"),
+                            types.KeyboardButton(text="👤 Подтверждение пользователей")
+                        ],
+                        # Здесь можно добавить другие команды, если появятся
+                    ],
+                    resize_keyboard=True # Делает кнопки компактными
+                )
+                reply_markup = director_keyboard
+                
             else:
                 greeting += f" Вы - Куратор ({user.name}). Начните работу с /tasks."
+                
+                # --- Создание клавиатуры Куратора (опционально, но логично) ---
+                curator_keyboard = types.ReplyKeyboardMarkup(
+                    keyboard=[
+                        [types.KeyboardButton(text="📋 Мои задачи")],
+                    ],
+                    resize_keyboard=True
+                )
+                reply_markup = curator_keyboard
         else:
             greeting = "Привет! Вы уже зарегистрированы, но <b>ожидаете подтверждения</b> Директором."
-        
-        await message.answer(greeting)
+            reply_markup = types.ReplyKeyboardRemove() # Удаляем любые клавиатуры
+
+        # Отправляем сообщение вместе с соответствующей клавиатурой
+        await message.answer(greeting, reply_markup=reply_markup)
         await state.clear()
         return
 
@@ -104,7 +132,7 @@ async def process_role(message: types.Message, state: FSMContext, bot: Bot):
 
 # --- Логика Подтверждения (Director) ---
 
-@router.message(F.text.lower() == "/confirm")
+@router.message(Command("confirm") | F.text == "👤 Подтверждение пользователей") # <-- ДОБАВЛЕНО
 async def command_confirm(message: types.Message, state: FSMContext):
     # Добавим Мидлвар позже для проверки роли, пока проверяем вручную
     db: Session = await asyncio.to_thread(get_db)

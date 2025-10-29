@@ -25,4 +25,17 @@ DEVELOPER_TELEGRAM_ID = int(os.getenv("DEVELOPER_TELEGRAM_ID", 0))
 # --- Константы Системы (остаются прежними) ---
 DIRECTOR_ROLE = "director"
 CURATOR_ROLE = "curator"
-# ... (остальной код config.py)
+# Статус задачи по умолчанию
+DEFAULT_STATUS = "pending"
+
+# Роли должны быть указаны в БД, а также использоваться в мидлварах для
+# ограничения доступа к командам
+ROLES = [DIRECTOR_ROLE, CURATOR_ROLE]
+
+# --- Настройки Напоминаний ---
+# Дни недели для еженедельных напоминаний (0 - понедельник, 6 - воскресенье)
+WEEKLY_REMINDER_DAY = 0 
+WEEKLY_REMINDER_HOUR = 9 # Напоминание в 9:00
+
+# День месяца для ежемесячных напоминаний
+MONTHLY_REMINDER_DAY = 1 # 1-е число месяца

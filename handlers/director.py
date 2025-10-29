@@ -11,7 +11,7 @@ from config import DIRECTOR_ROLE # Роль уже проверена мидлв
 router = Router()
 
 # --- Команда для запроса статистики ---
-@router.message(Command("stats"))
+@router.message(Command("stats") | F.text == "📊 Отчетность")
 async def command_stats(message: types.Message):
     await message.answer(
         "Выберите период, за который хотите получить статистику:",

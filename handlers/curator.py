@@ -12,7 +12,7 @@ from config import CURATOR_ROLE # Используется для наглядн
 router = Router()
 
 # --- Команда для просмотра задач ---
-@router.message(Command("tasks"))
+@router.message(Command("stats") | F.text == "📊 Отчетность") 
 async def command_tasks(message: types.Message, user: User):
     await message.answer(
         "Выберите, какие задачи вы хотите посмотреть:",

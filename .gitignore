@@ -40,3 +40,4 @@ Thumbs.db # Windows
 .idea/ # PyCharm/IntelliJ
 .vscode/ # VS Code
 
+logs

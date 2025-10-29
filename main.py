@@ -1,20 +1,24 @@
 import asyncio
+from loguru import logger
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties 
 from config import BOT_TOKEN, CURATOR_ROLE, DATABASE_URL, DIRECTOR_ROLE
 from database.models import Base, engine # Импортируем для создания таблиц
-from handlers.middlewares.error_middleware import CriticalErrorMiddleware
+from middlewares.error_middleware import CriticalErrorMiddleware
 from scheduler.tasks import setup_scheduler
 from sheets.service import GoogleSheetsService # Сервис для GSheets
 from handlers.common import router as common_router # Общие хендлеры
 from handlers.curator import router as curator_router # Хендлеры кураторов
 from handlers.director import router as director_router # Хендлеры директора
-from handlers.middlewares.middleware import RoleAccessMiddleware
+from middlewares.middleware import RoleAccessMiddleware
+from middlewares.logging_middleware import LoggingMiddleware # <-- НОВЫЙ ИМПОРТ
+
 # Инициализируем Сервис Google Sheets
 gs_service = GoogleSheetsService()
 
 async def main():
+    logger.add('logs/logs.log', level='INFO')
     # 1. Инициализация БД
     print("-> Инициализация БД...")
     Base.metadata.create_all(bind=engine)
@@ -39,6 +43,8 @@ async def main():
     
     director_router.message.middleware(RoleAccessMiddleware(allowed_roles=[DIRECTOR_ROLE]))
     dp.include_router(director_router)
+
+    dp.update.middleware(LoggingMiddleware()) 
     
     # 4. Настройка и запуск планировщика
     setup_scheduler(bot, gs_service) 
