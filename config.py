@@ -39,3 +39,4 @@ WEEKLY_REMINDER_HOUR = 9 # Напоминание в 9:00
 
 # День месяца для ежемесячных напоминаний
 MONTHLY_REMINDER_DAY = 1 # 1-е число месяца
+TASK_STATUS_DONE="ДА"

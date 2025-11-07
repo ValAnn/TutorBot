@@ -1,19 +1,24 @@
+# Файл: handlers/curator.py
 from aiogram import Router, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from sqlalchemy.orm import Session
 from datetime import date, timedelta
 import asyncio
 
-from database.crud import get_curator_tasks_for_period, get_db, update_task_status
-from database.models import User, Task
-from config import CURATOR_ROLE # Используется для наглядности, но роль проверяет мидлвар
+# Используем CRUD для получения БД-сессии
+from database.crud import get_db 
+from database.models import User # Типизация для User
+from sheets.service import GoogleSheetsService, TaskData # Сервис и модель задач
+from config import TASK_STATUS_DONE
 
 router = Router()
 
 # --- Команда для просмотра задач ---
-@router.message(Command("stats") | F.text == "📊 Отчетность") 
-async def command_tasks(message: types.Message, user: User):
+@router.message(Command("tasks"))
+@router.message(F.text == "📋 Мои задачи") # Обработка осмысленной кнопки
+async def command_tasks(message: types.Message): # User приходит через RoleAccessMiddleware
+     # Логика остается прежней (вывод инлайн-меню)
     await message.answer(
         "Выберите, какие задачи вы хотите посмотреть:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -22,36 +27,90 @@ async def command_tasks(message: types.Message, user: User):
         ])
     )
 
-# --- Callback: Показать задачи на период ---
+async def _generate_task_report(
+    user: User, 
+    gs_service: GoogleSheetsService, 
+    start_date: date, 
+    end_date: date, 
+    period_title: str,
+    target_message: Message | types.CallbackQuery
+):
+    """
+    Получает задачи и форматирует сообщение с кнопками.
+    Отправляет или редактирует сообщение в зависимости от типа target_message.
+    """
+    
+    tasks: list[TaskData] = await asyncio.to_thread(
+        gs_service.get_curator_tasks_for_period, 
+        user.sheet_name, 
+        start_date, 
+        end_date
+    )
+
+    if not tasks:
+        await target_message.answer(f"{period_title}: У вас нет активных задач в этот период.")
+        return
+
+    message_text = f"📋 **{period_title}** (Актуальный список):\n\n"
+    tasks.sort(key=lambda t: (t.status == TASK_STATUS_DONE.upper(), t.end_date))
+    
+    keyboard_buttons = []
+    
+    for task in tasks:
+        status_icon = "✅" if task.status == TASK_STATUS_DONE.upper() else "🔴"
+        
+        message_text += (
+            f"{status_icon} **{task.title}**\n"
+            f"   Сроки: {task.start_date.strftime('%d.%m')} - {task.end_date.strftime('%d.%m')}\n"
+        )
+        
+        if task.status != TASK_STATUS_DONE:
+            # Создаем кнопку для выполнения задачи
+            button_text = f"✅ Отметить: {task.title}"
+            callback_data = f"done:{task.id}"
+            
+            keyboard_buttons.append([
+                InlineKeyboardButton(text=button_text, callback_data=callback_data)
+            ])
+            
+        message_text += "\n"
+    
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    # Отправка нового сообщения с актуальным списком
+    await target_message.answer(
+        message_text, 
+        parse_mode='Markdown', 
+        reply_markup=reply_markup if keyboard_buttons else None
+    )
+
+
 @router.callback_query(F.data.in_({"tasks_weekly", "tasks_monthly"}))
-async def show_period_tasks(callback: types.CallbackQuery, user: User):
+async def show_period_tasks(callback: types.CallbackQuery, user: User, gs_service: GoogleSheetsService):
     await callback.answer(cache_time=1)
     
     is_weekly = (callback.data == "tasks_weekly")
-    
-    # Определение периода
     today = date.today()
+
+    # Определение периода
     if is_weekly:
-        # С начала текущей недели (понедельника) до конца
         start_date = today - timedelta(days=today.weekday())
         end_date = start_date + timedelta(days=6)
-        period_title = f"Задачи на неделю (с {start_date} по {end_date})"
+        period_title = f"Задачи на неделю (с {start_date.strftime('%d.%m')} по {end_date.strftime('%d.%m')})"
     else:
-        # С начала текущего месяца до конца
-        start_date = today.replace(day=1)
-        # Находим последнее число месяца
+        start_date = today.replace(day=1) 
         try:
+            # Следующий месяц минус один день
             end_date = start_date.replace(month=start_date.month + 1) - timedelta(days=1)
-        except ValueError: # Если месяц - декабрь
+        except ValueError:
+            # Если это декабрь
             end_date = start_date.replace(year=start_date.year + 1, month=1) - timedelta(days=1)
+            
         period_title = f"Задачи на месяц ({start_date.strftime('%B %Y')})"
         
-    # Получение задач из БД
-    db: Session = await asyncio.to_thread(get_db)
-    tasks: list[Task] = await asyncio.to_thread(
-        get_curator_tasks_for_period, 
-        db, 
-        user.id, 
+    tasks: list[TaskData] = await asyncio.to_thread(
+        gs_service.get_curator_tasks_for_period, 
+        user.sheet_name, 
         start_date, 
         end_date
     )
@@ -61,65 +120,100 @@ async def show_period_tasks(callback: types.CallbackQuery, user: User):
         return
 
     message_text = f"📋 **{period_title}**:\n\n"
+    tasks.sort(key=lambda t: (t.status == TASK_STATUS_DONE, t.end_date))
     
-    # Сортируем: сначала невыполненные, потом выполненные
-    tasks.sort(key=lambda t: (t.status == 'done', t.end_date))
-    
+    # Инициализация для кнопок
+    keyboard_buttons = []
+
     for task in tasks:
-        status_icon = "✅" if task.status == 'done' else ("⏳" if task.status == 'in_progress' else "🔴")
+        status_icon = "✅" if task.status == TASK_STATUS_DONE else "🔴"
         
-        # Куратор видит ВСЕ задачи, включая выполненные (как ты просила)
         message_text += (
             f"{status_icon} **{task.title}**\n"
-            f"   Сроки: {task.start_date.strftime('%d.%m')} - {task.end_date.strftime('%d.%m')}\n"
+            f"   Сроки: {task.start_date.strftime('%d.%m')} - {task.end_date.strftime('%d.%m')}\n"
         )
-        # Если задача не выполнена, предлагаем кнопку
-        if task.status != 'done':
-            message_text += (
-                f"   [ ] -> `/done_{task.id}`\n"
-            )
-
-    await callback.message.answer(message_text, parse_mode='Markdown')
-
-# --- Команда для отметки выполнения (кнопка "Готово") ---
-@router.message(F.text.startswith("/done_"))
-async def mark_task_done(message: types.Message, user: User, gs_service):
-    # Извлекаем ID задачи из команды
-    try:
-        task_id = int(message.text.split("_")[1])
-    except (IndexError, ValueError):
-        await message.answer("Ошибка в формате команды. Пожалуйста, используйте кнопку или команду /tasks.")
-        return
-
-    db: Session = await asyncio.to_thread(get_db)
-    # Ищем задачу и проверяем, что она принадлежит этому куратору
-    task_to_update: Task = await asyncio.to_thread(lambda: db.query(Task).filter(Task.id == task_id, Task.curator_id == user.id).first())
-
-    if not task_to_update:
-        await message.answer("Задача не найдена или принадлежит другому куратору.")
-        return
         
-    if task_to_update.status == 'done':
-        await message.answer(f"Задача **{task_to_update.title}** уже была выполнена. ✅", parse_mode='Markdown')
+        if task.status != TASK_STATUS_DONE:
+            # 📌 Создаем кнопку для выполнения задачи
+            button_text = f"✅ Отметить: {task.title}"
+            # Callback data: 'done:TASK_ID'
+            callback_data = f"done:{task.id}"
+            
+            keyboard_buttons.append([
+                InlineKeyboardButton(text=button_text, callback_data=callback_data)
+            ])
+            
+        message_text += "\n"
+    
+    # Создаем финальный объект клавиатуры
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    # Отправляем сообщение с кнопками, если есть невыполненные задачи
+    if keyboard_buttons:
+        await callback.message.answer(message_text, parse_mode='Markdown', reply_markup=reply_markup)
+    else:
+        # Если все выполнено
+        await callback.message.answer(message_text, parse_mode='Markdown')
+
+
+# --- НОВЫЙ CALLBACK HANDLER: Отметить задачу как выполненную ---
+@router.callback_query(F.data.startswith("done:"))
+async def mark_task_done_callback(callback: types.CallbackQuery, user: User, gs_service: GoogleSheetsService):
+    
+    # 1. Извлекаем task_id
+    try:
+        # 'done:123' -> 123
+        task_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка ID задачи.")
         return
 
-    # 1. Обновление статуса в БД
-    updated_task = await asyncio.to_thread(update_task_status, db, task_id, 'done')
+    await callback.answer(f"Обрабатываю задачу ID {task_id}...", cache_time=1)
     
     # 2. Обновление статуса в Google Sheets
-    # Используем gs_service, переданный через DI
-    success = await asyncio.to_thread(gs_service.update_status_in_sheet, updated_task, 'DONE')
+    success = await asyncio.to_thread(
+        gs_service.update_status_in_sheet, 
+        task_id, 
+        user.sheet_name, 
+        TASK_STATUS_DONE
+    )
 
     if success:
-        await message.answer(
-            f"✅ Задача **{updated_task.title}** отмечена как выполненная!\n"
+        # 3. Редактируем сообщение: удаляем клавиатуру и отправляем подтверждение
+        try:
+            await callback.bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id
+            )
+        except Exception as e:
+            # Игнорируем ошибку, если бот не смог удалить сообщение 
+            # (например, если оно слишком старое или нет прав).
+            print(f"Не удалось удалить сообщение: {e}")
+            pass 
+        # Удаляем клавиатуру из сообщения, по которому было нажатие
+        
+            
+        today = date.today()
+        start_date = today - timedelta(days=today.weekday())
+        end_date = start_date + timedelta(days=6)
+        period_title = f"Задачи на неделю (с {start_date.strftime('%d.%m')} по {end_date.strftime('%d.%m')})"
+
+        await callback.message.answer(
+            f"✅ Задача ID **{task_id}** отмечена как выполненная!\n"
             "Данные успешно синхронизированы с Google Sheets.",
             parse_mode='Markdown'
         )
+
+        await _generate_task_report(
+            user, 
+            gs_service, 
+            start_date, 
+            end_date, 
+            period_title, 
+            callback.message # Используем callback.message для отправки нового сообщения
+        )
     else:
-        # Если GSheet не обновился, но БД обновилась
-        await message.answer(
-            f"✅ Задача **{updated_task.title}** отмечена как выполненная в системе.\n"
-            "⚠️ **ВНИМАНИЕ!** Не удалось обновить Google Sheets. Сообщите Директору.",
+        await callback.message.answer(
+            f"⚠️ **ВНИМАНИЕ!** Не удалось найти или обновить задачу ID **{task_id}** в Google Sheets.",
             parse_mode='Markdown'
         )

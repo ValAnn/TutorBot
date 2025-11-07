@@ -5,10 +5,11 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.orm import Session
 import asyncio
 from aiogram.filters import Command
-from database.crud import get_user_by_telegram_id, create_user, get_director, get_unconfirmed_users, confirm_user
+from database.crud import get_user_by_telegram_id, create_user, get_director, get_unconfirmed_users
 from database.crud import get_db # Используем синхронный CRUD, поэтому нужны потоки
 from config import DIRECTOR_ROLE, CURATOR_ROLE
 from database.models import User
+from aiogram.enums import ParseMode
 
 router = Router()
 
@@ -132,7 +133,7 @@ async def process_role(message: types.Message, state: FSMContext, bot: Bot):
 
 # --- Логика Подтверждения (Director) ---
 
-@router.message(Command("confirm") | F.text == "👤 Подтверждение пользователей") # <-- ДОБАВЛЕНО
+@router.message(Command("confirm")) # | (F.text == "👤 Подтверждение пользователей")) # <-- ДОБАВЛЕНО
 async def command_confirm(message: types.Message, state: FSMContext):
     # Добавим Мидлвар позже для проверки роли, пока проверяем вручную
     db: Session = await asyncio.to_thread(get_db)
