@@ -25,6 +25,12 @@ class TaskData:
                 continue
         return date.today() 
 
+class CuratorSheetInfo:
+    """Модель для Куратора, где вся информация - это имя листа."""
+    def __init__(self, sheet_name: str):
+        self.sheet_name = sheet_name
+        self.name = sheet_name # Имя куратора = название листа
+
 class GoogleSheetsService:
     def __init__(self, spreadsheet_name, key_file):
         self.key_file = key_file
@@ -59,6 +65,20 @@ class GoogleSheetsService:
             print(f"Ошибка чтения задач Куратора ({curator_sheet_name}): {e}")
             return []
 
+    def get_all_curator_sheets(self) -> list[CuratorSheetInfo]:
+        """Получает названия всех листов, исключая служебные (например, лист Директора)."""
+        worksheets = self.spreadsheet.worksheets()
+        curator_sheets = []
+        
+        # Определяем листы, которые не являются Кураторами (служебные)
+        # ВАЖНО: замените "DIRECTOR_STAT" на реальное имя листа директора/статистики
+        EXCLUDED_SHEETS = ["Лист1", "DIRECTOR_STAT", "Template"] 
+        
+        for ws in worksheets:
+            if ws.title not in EXCLUDED_SHEETS:
+                curator_sheets.append(CuratorSheetInfo(sheet_name=ws.title))
+        return curator_sheets
+    
     def update_status_in_sheet(self, task_id: int, curator_sheet_name: str, new_status: str) -> bool:
         """Обновляет статус задачи в таблице Куратора по ID."""
         try:

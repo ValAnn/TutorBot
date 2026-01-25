@@ -51,20 +51,20 @@ async def _generate_task_report(
         await target_message.answer(f"{period_title}: У вас нет активных задач в этот период.")
         return
 
-    message_text = f"📋 **{period_title}** (Актуальный список):\n\n"
+    message_text = f"📋 **{period_title}** (Обновлено):\n\n"
     tasks.sort(key=lambda t: (t.status == TASK_STATUS_DONE.upper(), t.end_date))
     
     keyboard_buttons = []
     
     for task in tasks:
-        status_icon = "✅" if task.status == TASK_STATUS_DONE.upper() else "🔴"
+        status_icon = "✅" if task.status.upper() == TASK_STATUS_DONE else "🔴"
         
         message_text += (
             f"{status_icon} **{task.title}**\n"
             f"   Сроки: {task.start_date.strftime('%d.%m')} - {task.end_date.strftime('%d.%m')}\n"
         )
         
-        if task.status != TASK_STATUS_DONE:
+        if task.status.upper() != TASK_STATUS_DONE:
             # Создаем кнопку для выполнения задачи
             button_text = f"✅ Отметить: {task.title}"
             callback_data = f"done:{task.id}"
@@ -126,14 +126,14 @@ async def show_period_tasks(callback: types.CallbackQuery, user: User, gs_servic
     keyboard_buttons = []
 
     for task in tasks:
-        status_icon = "✅" if task.status == TASK_STATUS_DONE else "🔴"
+        status_icon = "✅" if task.status.upper() == TASK_STATUS_DONE else "🔴"
         
         message_text += (
             f"{status_icon} **{task.title}**\n"
             f"   Сроки: {task.start_date.strftime('%d.%m')} - {task.end_date.strftime('%d.%m')}\n"
         )
         
-        if task.status != TASK_STATUS_DONE:
+        if task.status.upper() != TASK_STATUS_DONE:
             # 📌 Создаем кнопку для выполнения задачи
             button_text = f"✅ Отметить: {task.title}"
             # Callback data: 'done:TASK_ID'
